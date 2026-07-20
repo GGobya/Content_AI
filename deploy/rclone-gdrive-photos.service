@@ -1,0 +1,23 @@
+[Unit]
+Description=RClone mount Google Drive photos for MOVIREVO
+AssertPathIsDirectory=/opt/movirevo/photos
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/rclone mount gdrive:MOVIREVO/photos /opt/movirevo/photos \
+    --config=/root/.config/rclone/rclone.conf \
+    --vfs-cache-mode minimal \
+    --dir-cache-time 30s \
+    --poll-interval 30s \
+    --allow-other \
+    --umask 002
+ExecStop=/bin/fusermount -uz /opt/movirevo/photos
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

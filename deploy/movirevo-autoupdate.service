@@ -1,0 +1,10 @@
+[Unit]
+Description=MOVIREVO auto-update (git pull + docker compose rebuild)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+Environment=REPO_DIR=/opt/movirevo
+Environment=BRANCH=main
+ExecStart=/opt/movirevo/deploy/autoupdate.sh

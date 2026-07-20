@@ -1,0 +1,10 @@
+.git
+.env
+venv
+__pycache__
+*.pyc
+output/*
+!output/.gitkeep
+photos/*
+!photos/.gitkeep
+state.json
