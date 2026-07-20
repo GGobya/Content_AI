@@ -29,7 +29,7 @@ log = get_logger("movirevo.config")
 class Config:
     # --- Claude / Anthropic ---
     anthropic_api_key: str = os.getenv("ANTHROPIC_API_KEY", "")
-    claude_model: str = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
+    claude_model: str = os.getenv("CLAUDE_MODEL", "claude-sonnet-5")
 
     # --- Telegram ---
     telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")

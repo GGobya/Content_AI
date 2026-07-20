@@ -16,6 +16,13 @@ GOOGLE_TRENDS_RSS_US = "https://trends.google.com/trending/rss?geo=US"
 def fetch_google_trends() -> list[dict]:
     log.info("Загружаю Google Trends RSS (US)...")
     feed = feedparser.parse(GOOGLE_TRENDS_RSS_US)
+    if feed.bozo:
+        log.error(
+            "Не удалось загрузить/разобрать Google Trends RSS (%s) — "
+            "источник трендов недоступен, пайплайн продолжит с тем, что есть",
+            feed.bozo_exception,
+        )
+        return []
     trends = [
         {
             "title": e.get("title", ""),
