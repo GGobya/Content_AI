@@ -3,6 +3,12 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    # Docker bridge network has no outbound IPv6 route even when the host
+    # does; api.telegram.org resolves to an AAAA record, so without this
+    # the container tries IPv6 first and hangs until ConnectTimeout.
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+      - net.ipv6.conf.default.disable_ipv6=1
     volumes:
       - ./photos:/app/photos
       - ./output:/app/output

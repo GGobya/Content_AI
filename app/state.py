@@ -18,7 +18,7 @@ class State:
     def __init__(self, path: Path):
         self.path = path
         self.data = {"scenarios": {}, "videos": {}}
-        if self.path.exists():
+        if self.path.exists() and self.path.read_text(encoding="utf-8").strip():
             try:
                 self.data = json.loads(self.path.read_text(encoding="utf-8"))
             except Exception:
