@@ -1,6 +1,10 @@
 """
-Шаги 4/6/7 через Telegram-бота (long polling):
+Шаги 3/4/6/7 через Telegram-бота (long polling):
 
+  /run или ежедневный джоб            — бот сначала просит ссылку на Google
+                                          Диск с фото товара (см. on_text_message)
+                                          и только после получения ссылки
+                                          запускает тренды -> сценарии
   scn_approve:<id> / scn_reject:<id>  — согласование сценария (после шага 3)
                                           при approve -> сразу уходит в Higgsfield
   vid_approve:<id> / vid_reject:<id>  — согласование готового видео (после шага 4)
@@ -9,7 +13,7 @@
                                           по тому же сценарию (без повторного апрува)
 
 Команды:
-  /run   — запустить пайплайн вручную (тренды -> сценарии -> отправка на согласование)
+  /run   — запустить пайплайн вручную (спросит ссылку на фото -> сценарии на согласование)
   /start — приветствие/проверка что бот жив
 """
 
@@ -23,12 +27,16 @@ from telegram.ext import (
     Application,
     CommandHandler,
     CallbackQueryHandler,
+    MessageHandler,
     ContextTypes,
+    filters,
 )
 
 from app.config import CFG, get_logger
 from app.state import STATE
 from app.pipeline import run_trend_and_prompt_pipeline
+from app.claude_analysis import analyze_product_photos
+from app.drive_import import is_drive_link, download_from_drive
 from app.higgsfield_client import generate_video_for_scenario
 from app.instagram_publish import publish_reel
 
@@ -181,29 +189,77 @@ async def on_video_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"👋 Контент-завод {CFG.brand_name} на связи.\n"
-        f"Автозапуск каждый день в {CFG.daily_run_time}.\n"
+        f"Автозапуск каждый день в {CFG.daily_run_time} (спрошу ссылку на Google Диск с фото товара).\n"
         f"Команда /run — запустить пайплайн вручную прямо сейчас."
     )
 
 
+async def request_product_photos(app: Application):
+    STATE.data["awaiting_photo_link"] = True
+    STATE.save()
+    await app.bot.send_message(
+        chat_id=CFG.telegram_chat_id,
+        text=(
+            "📎 Пришлите ссылку на Google Диск с фото товара для сегодняшней "
+            "генерации (файл или папка, доступ «Всем, у кого есть ссылка»). "
+            "Как только пришлёте — начну собирать тренды и писать сценарии."
+        ),
+    )
+
+
 async def cmd_run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Запускаю пайплайн: собираю тренды и генерирую сценарии...")
-    scenarios = run_trend_and_prompt_pipeline()
-    if not scenarios:
-        await update.message.reply_text("Не удалось сгенерировать сценарии, проверьте логи.")
-        return
-    for scn in scenarios:
-        await send_scenario_for_approval(context.application, scn)
+    await request_product_photos(context.application)
 
 
 async def daily_job(context: ContextTypes.DEFAULT_TYPE):
     log.info("=== Запуск ежедневного пайплайна контент-завода ===")
-    scenarios = run_trend_and_prompt_pipeline()
-    if not scenarios:
-        await context.bot.send_message(
-            chat_id=CFG.telegram_chat_id,
-            text="⚠️ Не удалось сгенерировать сценарии сегодня, проверьте логи.",
+    await request_product_photos(context.application)
+
+
+async def on_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Ловит обычный текст (не команду) — используется только для ссылки на
+    Google Диск, которую бот запросил через request_product_photos(). Всё
+    остальное вне этого ожидания игнорируется."""
+    if not STATE.data.get("awaiting_photo_link"):
+        return
+
+    link = (update.message.text or "").strip()
+    if not is_drive_link(link):
+        await update.message.reply_text(
+            "Это не похоже на ссылку Google Диска. Пришлите ссылку вида https://drive.google.com/..."
         )
+        return
+
+    STATE.data["awaiting_photo_link"] = False
+    STATE.save()
+    await update.message.reply_text("⏳ Скачиваю фото с Google Диска...")
+
+    try:
+        photos = await asyncio.to_thread(download_from_drive, link)
+    except Exception as e:
+        log.exception("Ошибка скачивания с Google Диска")
+        await update.message.reply_text(f"⚠️ Не удалось скачать с Google Диска: {e}")
+        return
+
+    if not photos:
+        await update.message.reply_text(
+            "⚠️ По ссылке не нашлось ни одного фото (jpg/png/webp). "
+            "Проверьте доступ («Всем, у кого есть ссылка») и пришлите /run ещё раз."
+        )
+        return
+
+    await update.message.reply_text(f"✅ Скачано {len(photos)} фото. Анализирую и собираю тренды...")
+
+    try:
+        photo_info = await asyncio.to_thread(analyze_product_photos, photos)
+        scenarios = await asyncio.to_thread(run_trend_and_prompt_pipeline, photos, photo_info)
+    except Exception as e:
+        log.exception("Ошибка пайплайна после получения фото с Google Диска")
+        await update.message.reply_text(f"⚠️ Ошибка при генерации сценариев: {e}")
+        return
+
+    if not scenarios:
+        await update.message.reply_text("Не удалось сгенерировать сценарии, проверьте логи.")
         return
     for scn in scenarios:
         await send_scenario_for_approval(context.application, scn)
@@ -222,6 +278,7 @@ def build_app() -> Application:
     app.add_handler(CommandHandler("run", cmd_run_pipeline))
     app.add_handler(CallbackQueryHandler(on_scenario_callback, pattern=r"^scn_"))
     app.add_handler(CallbackQueryHandler(on_video_callback, pattern=r"^vid_"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text_message))
 
     run_time = datetime.strptime(CFG.daily_run_time, "%H:%M").time()
     app.job_queue.run_daily(daily_job, time=run_time)

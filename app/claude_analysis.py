@@ -2,7 +2,9 @@
 Шаг 2-3: анализ трендов и генерация видео-промптов через Claude API.
 """
 
+import base64
 import json
+import mimetypes
 from pathlib import Path
 from datetime import datetime
 
@@ -81,8 +83,57 @@ def select_relevant_trends(trends: list[dict]) -> list[dict]:
     return selected
 
 
-def generate_video_prompts(selected_trends: list[dict], product_photos: list[Path]) -> list[dict]:
-    """Генерирует N сюжетных промптов для Higgsfield на основе отобранных трендов."""
+def analyze_product_photos(photos: list[Path]) -> list[dict]:
+    """Просит Claude (vision) по каждому фото определить тип товара и коротко
+    описать ключевые визуальные детали — чтобы сценарий и промпт для Higgsfield
+    ссылались на реальную вещь с фото, а не на общую категорию."""
+    if not photos:
+        return []
+
+    client = get_client()
+    info = []
+    for photo in photos:
+        media_type = mimetypes.guess_type(photo.name)[0] or "image/jpeg"
+        image_b64 = base64.standard_b64encode(photo.read_bytes()).decode("utf-8")
+
+        log.info("Анализирую фото товара: %s", photo.name)
+        message = client.messages.create(
+            model=CFG.claude_model,
+            max_tokens=300,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": image_b64}},
+                    {"type": "text", "text": (
+                        f"На фото — товар бренда {CFG.brand_name} ({CFG.brand_description}). "
+                        "Определи тип товара и опиши ключевые визуальные детали (цвет, фактура, "
+                        "принт, посадка) 1-2 предложениями на русском. Верни ТОЛЬКО валидный JSON "
+                        'без markdown: {"product_type": "шарф | свитер | бомбер | ветровка", "description": "..."}'
+                    )},
+                ],
+            }],
+        )
+        raw = _extract_json(message)
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            log.warning("Не удалось разобрать анализ фото %s, использую заглушку", photo.name)
+            parsed = {"product_type": "товар", "description": ""}
+        parsed["photo_path"] = str(photo)
+        info.append(parsed)
+
+    return info
+
+
+def generate_video_prompts(
+    selected_trends: list[dict], product_photos: list[Path], photo_info: list[dict] | None = None,
+) -> list[dict]:
+    """Генерирует N сюжетных промптов для Higgsfield на основе отобранных трендов.
+
+    photo_info (опционально) — результат analyze_product_photos(): если задан,
+    фото подбирается сценарию по совпадению product_type, а описание фото
+    добавляется в промпт для Higgsfield; иначе фото раздаются по кругу как раньше.
+    """
     if not selected_trends:
         return []
 
@@ -140,9 +191,21 @@ def generate_video_prompts(selected_trends: list[dict], product_photos: list[Pat
     if not product_photos:
         log.warning("В %s не найдено фото товара — сценарии без референсного фото", CFG.photos_dir)
 
+    used_by_type: dict[str, int] = {}
     for i, p in enumerate(prompts):
         p["scenario_id"] = f"scn_{datetime.now():%Y%m%d_%H%M%S}_{i + 1}"
-        p["photo_path"] = str(product_photos[i % len(product_photos)]) if product_photos else None
+
+        if photo_info:
+            matches = [ph for ph in photo_info if ph.get("product_type") == p.get("product_type")]
+            pool = matches or photo_info
+            idx = used_by_type.get(p.get("product_type", ""), 0) % len(pool)
+            used_by_type[p.get("product_type", "")] = idx + 1
+            chosen = pool[idx]
+            p["photo_path"] = chosen["photo_path"]
+            if chosen.get("description"):
+                p["video_prompt"] += f"\n\nДеталь товара с фото: {chosen['description']}"
+        else:
+            p["photo_path"] = str(product_photos[i % len(product_photos)]) if product_photos else None
 
     log.info("Сгенерировано %d промптов", len(prompts))
     return prompts
