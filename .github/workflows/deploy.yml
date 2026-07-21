@@ -1,0 +1,30 @@
+name: Deploy to server
+
+on:
+  push:
+    branches:
+      - main
+      - claude/new-session-zodz7e
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy over SSH
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" '
+            set -euo pipefail
+            cd /opt/movirevo
+            git fetch origin
+            git reset --hard "origin/${{ github.ref_name }}"
+            docker compose up -d --build
+          '
