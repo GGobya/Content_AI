@@ -1,4 +1,5 @@
 name: Diagnose server
+# re-run after host-networking deploy settled
 
 on:
   workflow_dispatch: {}
