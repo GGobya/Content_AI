@@ -38,12 +38,15 @@ class Config:
     # --- Higgsfield ---
     # Базовый URL и заголовок авторизации сверены с исходниками официального
     # SDK (github.com/higgsfield-ai/higgsfield-client) — см. комментарий в
-    # app/higgsfield_client.py. HIGGSFIELD_APPLICATION — путь модели для
-    # генерации видео, значение по умолчанию НЕ подтверждено официально.
+    # app/higgsfield_client.py. HIGGSFIELD_APPLICATION="marketing_studio_video"
+    # подтверждено по github.com/higgsfield-ai/skills (higgsfield-generate/SKILL.md)
+    # — тот же идентификатор используется и в их MCP, и в CLI. Первое реальное
+    # обращение всё равно проверит, совпадает ли REST-путь с этим именем 1:1
+    # (предыдущее значение "higgsfield/marketing-studio/video" дало 404).
     higgsfield_api_key: str = os.getenv("HIGGSFIELD_API_KEY", "")
     higgsfield_api_secret: str = os.getenv("HIGGSFIELD_API_SECRET", "")
     higgsfield_api_base: str = os.getenv("HIGGSFIELD_API_BASE", "https://platform.higgsfield.ai")
-    higgsfield_application: str = os.getenv("HIGGSFIELD_APPLICATION", "higgsfield/marketing-studio/video")
+    higgsfield_application: str = os.getenv("HIGGSFIELD_APPLICATION", "marketing_studio_video")
     higgsfield_video_timeout_s: int = int(os.getenv("HIGGSFIELD_VIDEO_TIMEOUT_S", "600"))
     higgsfield_poll_interval_s: int = int(os.getenv("HIGGSFIELD_POLL_INTERVAL_S", "10"))
 

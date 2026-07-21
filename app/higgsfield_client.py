@@ -23,15 +23,16 @@ docs.higgsfield.ai недоступен из этого окружения (403 
     "failed" | "nsfw" | "canceled". Финальный результат — отдельным GET на
     response_url.
 
-НЕ ПОДТВЕРЖДЕНО (сверить в личном кабинете https://cloud.higgsfield.ai или в
-поддержке Higgsfield перед первым реальным запуском):
-  - точная строка `application` (путь модели) для Marketing Studio /
-    product-video генерации — HIGGSFIELD_APPLICATION в .env сейчас содержит
-    best-effort значение по аналогии с MCP-инструментом generate_video
-    (там модель называется "marketing_studio_video" и принимает prompt +
-    aspect_ratio + medias[{role, value}]), но у REST API путь модели может
-    называться иначе (SDK адресует модели строками вида
-    "provider/model/version/task", например "bytedance/seedream/v4/text-to-image")
+ОБНОВЛЕНИЕ (июль 2026): `HIGGSFIELD_APPLICATION="higgsfield/marketing-studio/video"`
+дал `404 Not Found` при первом реальном запуске. По github.com/higgsfield-ai/skills
+(higgsfield-generate/SKILL.md — их же CLI и MCP-документация) правильный
+идентификатор модели — плоская строка `marketing_studio_video`, без префикса
+`higgsfield/` и суффикса `/video`; это тот же идентификатор, что используется
+и в MCP-инструменте generate_video, и в CLI (`higgsfield generate create
+marketing_studio_video ...`). Обновлено в .env.example и app/config.py.
+
+ВСЁ ЕЩЁ НЕ ПОДТВЕРЖДЕНО (сверить в личном кабинете https://cloud.higgsfield.ai
+или в поддержке Higgsfield, если снова будет ошибка):
   - точное имя поля с URL готового видео внутри response_url — _extract_video_url()
     ниже проверяет несколько вероятных вариантов и явно падает с понятной
     ошибкой, если ни один не подошёл, чтобы это было легко продиагностировать
