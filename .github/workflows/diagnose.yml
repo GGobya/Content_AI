@@ -1,5 +1,5 @@
 name: Diagnose server
-# re-run after host-networking deploy settled
+# re-run to check why /run produced no scenarios
 
 on:
   workflow_dispatch: {}
@@ -27,8 +27,8 @@ jobs:
             cd /opt/movirevo
             echo "=== docker compose ps ==="
             docker compose ps
-            echo "=== docker compose logs (last 100 lines) ==="
-            docker compose logs --tail 100
+            echo "=== docker compose logs (last 100 lines, no getUpdates noise) ==="
+            docker compose logs --tail 2000 | grep -v "getUpdates" | tail -150
             echo "=== connectivity: host -> api.telegram.org ==="
             curl -sS -o /dev/null -w "http_code=%{http_code} time=%{time_total}s\n" --max-time 10 https://api.telegram.org || echo "host curl FAILED: $?"
             echo "=== connectivity: bot container (host network) -> api.telegram.org ==="
