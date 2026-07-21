@@ -1,5 +1,5 @@
 name: Diagnose server
-# re-run to check why /run produced no scenarios
+# re-run to check why bot doesn't respond after receiving Drive link
 
 on:
   workflow_dispatch: {}
