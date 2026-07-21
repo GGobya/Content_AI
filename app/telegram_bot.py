@@ -5,13 +5,18 @@
                                           при approve -> сразу уходит в Higgsfield
   vid_approve:<id> / vid_reject:<id>  — согласование готового видео (после шага 4)
                                           при approve -> сразу публикуется в Instagram
+  vid_regen:<id>                      — сгенерировать ещё один вариант видео
+                                          по тому же сценарию (без повторного апрува)
 
 Команды:
   /run   — запустить пайплайн вручную (тренды -> сценарии -> отправка на согласование)
   /start — приветствие/проверка что бот жив
 """
 
+import asyncio
+import time
 from datetime import datetime
+from pathlib import Path
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -54,13 +59,18 @@ async def send_scenario_for_approval(app: Application, scenario: dict):
     )
 
 
-async def send_video_for_approval(app: Application, video_id: str, video_path, caption: str):
-    STATE.add_video(video_id, {"status": "pending", "path": str(video_path), "caption": caption})
+async def send_video_for_approval(app: Application, video_id: str, video_path, caption: str, scenario_id: str):
+    STATE.add_video(video_id, {
+        "status": "pending", "path": str(video_path), "caption": caption, "scenario_id": scenario_id,
+    })
 
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ Опубликовать в Instagram", callback_data=f"vid_approve:{video_id}"),
-        InlineKeyboardButton("❌ Отклонить", callback_data=f"vid_reject:{video_id}"),
-    ]])
+    keyboard = InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("✅ Опубликовать в Instagram", callback_data=f"vid_approve:{video_id}"),
+            InlineKeyboardButton("❌ Отклонить", callback_data=f"vid_reject:{video_id}"),
+        ],
+        [InlineKeyboardButton("🔁 Сгенерировать ещё раз", callback_data=f"vid_regen:{video_id}")],
+    ])
     with open(video_path, "rb") as f:
         await app.bot.send_video(
             chat_id=CFG.telegram_chat_id,
@@ -94,10 +104,11 @@ async def on_scenario_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     )
 
     try:
-        video_path = generate_video_for_scenario(scenario)
-        video_id = f"vid_{scenario_id}"
+        video_path = await asyncio.to_thread(generate_video_for_scenario, scenario)
+        video_id = f"vid_{scenario_id}_{int(time.time())}"
         await send_video_for_approval(
-            context.application, video_id, video_path, caption=scenario.get("speech_ru", "")
+            context.application, video_id, video_path,
+            caption=scenario.get("speech_ru", ""), scenario_id=scenario_id,
         )
     except Exception as e:
         log.exception("Ошибка генерации видео для %s", scenario_id)
@@ -121,11 +132,37 @@ async def on_video_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_caption("❌ Видео отклонено, публикация отменена.")
         return
 
+    if action == "vid_regen":
+        scenario = STATE.get("scenarios", video.get("scenario_id"))
+        if not scenario:
+            await context.bot.send_message(
+                chat_id=CFG.telegram_chat_id,
+                text="⚠️ Не найден исходный сценарий для повторной генерации.",
+            )
+            return
+        await context.bot.send_message(
+            chat_id=CFG.telegram_chat_id,
+            text=f"🔁 Генерирую ещё один вариант для «{scenario.get('scenario_title')}»...",
+        )
+        try:
+            new_video_path = await asyncio.to_thread(generate_video_for_scenario, scenario)
+            new_video_id = f"vid_{scenario['scenario_id']}_{int(time.time())}"
+            await send_video_for_approval(
+                context.application, new_video_id, new_video_path,
+                caption=scenario.get("speech_ru", ""), scenario_id=scenario["scenario_id"],
+            )
+        except Exception as e:
+            log.exception("Ошибка повторной генерации видео для %s", video.get("scenario_id"))
+            await context.bot.send_message(
+                chat_id=CFG.telegram_chat_id, text=f"⚠️ Ошибка при генерации видео: {e}",
+            )
+        return
+
     STATE.update("videos", video_id, status="approved")
     await query.edit_message_caption("✅ Одобрено. Публикую в Instagram...")
 
     try:
-        post_url = publish_reel(__import__("pathlib").Path(video["path"]), video.get("caption", ""))
+        post_url = await asyncio.to_thread(publish_reel, Path(video["path"]), video.get("caption", ""))
         STATE.update("videos", video_id, status="published", post_url=post_url)
         await context.bot.send_message(
             chat_id=CFG.telegram_chat_id, text=f"🚀 Опубликовано в Instagram: {post_url}"
