@@ -2,6 +2,11 @@ name: Diagnose server
 
 on:
   workflow_dispatch: {}
+  push:
+    branches:
+      - claude/new-session-zodz7e
+    paths:
+      - .github/workflows/diagnose.yml
 
 jobs:
   diagnose:
