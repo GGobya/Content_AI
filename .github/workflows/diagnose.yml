@@ -34,4 +34,6 @@ jobs:
             docker compose exec -T bot python3 -c "import urllib.request,time; t=time.time(); urllib.request.urlopen(\"https://api.telegram.org\", timeout=10); print(\"OK\", time.time()-t)" || echo "container curl FAILED"
             echo "=== DNS resolution on host ==="
             getent hosts api.telegram.org || echo "DNS FAILED"
+            echo "=== IPv6 disabled in container? ==="
+            docker compose exec -T bot cat /proc/sys/net/ipv6/conf/all/disable_ipv6
           '
