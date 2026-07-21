@@ -28,4 +28,10 @@ jobs:
             docker compose ps
             echo "=== docker compose logs (last 200 lines) ==="
             docker compose logs --tail 200
+            echo "=== connectivity: host -> api.telegram.org ==="
+            curl -sS -o /dev/null -w "http_code=%{http_code} time=%{time_total}s\n" --max-time 10 https://api.telegram.org || echo "host curl FAILED: $?"
+            echo "=== connectivity: container -> api.telegram.org ==="
+            docker compose exec -T bot python3 -c "import urllib.request,time; t=time.time(); urllib.request.urlopen(\"https://api.telegram.org\", timeout=10); print(\"OK\", time.time()-t)" || echo "container curl FAILED"
+            echo "=== DNS resolution on host ==="
+            getent hosts api.telegram.org || echo "DNS FAILED"
           '
