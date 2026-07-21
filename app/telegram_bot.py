@@ -43,6 +43,17 @@ from app.instagram_publish import publish_reel
 log = get_logger("movirevo.telegram")
 
 
+async def _safe(coro):
+    """Отправка Telegram API с этого сервера иногда даёт ConnectTimeout (см.
+    диагностику по /run без ответа) — статусное сообщение падало необработанным
+    исключением и обрывало уже начатую загрузку/генерацию. Прогресс-статусы
+    не критичны для результата, поэтому такие сбои только логируются."""
+    try:
+        await coro
+    except Exception:
+        log.exception("Не удалось отправить статусное сообщение в Telegram (не критично, продолжаю)")
+
+
 # --------------------------------------------------------------------------- #
 # Отправка на согласование
 # --------------------------------------------------------------------------- #
@@ -107,9 +118,9 @@ async def on_scenario_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     STATE.update("scenarios", scenario_id, status="approved")
-    await query.edit_message_text(
+    await _safe(query.edit_message_text(
         f"✅ Сценарий «{scenario.get('scenario_title')}» одобрен. Отправляю в Higgsfield..."
-    )
+    ))
 
     try:
         video_path = await asyncio.to_thread(generate_video_for_scenario, scenario)
@@ -120,10 +131,10 @@ async def on_scenario_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         )
     except Exception as e:
         log.exception("Ошибка генерации видео для %s", scenario_id)
-        await context.bot.send_message(
+        await _safe(context.bot.send_message(
             chat_id=CFG.telegram_chat_id,
             text=f"⚠️ Ошибка при генерации видео для «{scenario.get('scenario_title')}»: {e}",
-        )
+        ))
 
 
 async def on_video_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -143,15 +154,15 @@ async def on_video_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if action == "vid_regen":
         scenario = STATE.get("scenarios", video.get("scenario_id"))
         if not scenario:
-            await context.bot.send_message(
+            await _safe(context.bot.send_message(
                 chat_id=CFG.telegram_chat_id,
                 text="⚠️ Не найден исходный сценарий для повторной генерации.",
-            )
+            ))
             return
-        await context.bot.send_message(
+        await _safe(context.bot.send_message(
             chat_id=CFG.telegram_chat_id,
             text=f"🔁 Генерирую ещё один вариант для «{scenario.get('scenario_title')}»...",
-        )
+        ))
         try:
             new_video_path = await asyncio.to_thread(generate_video_for_scenario, scenario)
             new_video_id = f"vid_{scenario['scenario_id']}_{int(time.time())}"
@@ -161,25 +172,25 @@ async def on_video_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception as e:
             log.exception("Ошибка повторной генерации видео для %s", video.get("scenario_id"))
-            await context.bot.send_message(
+            await _safe(context.bot.send_message(
                 chat_id=CFG.telegram_chat_id, text=f"⚠️ Ошибка при генерации видео: {e}",
-            )
+            ))
         return
 
     STATE.update("videos", video_id, status="approved")
-    await query.edit_message_caption("✅ Одобрено. Публикую в Instagram...")
+    await _safe(query.edit_message_caption("✅ Одобрено. Публикую в Instagram..."))
 
     try:
         post_url = await asyncio.to_thread(publish_reel, Path(video["path"]), video.get("caption", ""))
         STATE.update("videos", video_id, status="published", post_url=post_url)
-        await context.bot.send_message(
+        await _safe(context.bot.send_message(
             chat_id=CFG.telegram_chat_id, text=f"🚀 Опубликовано в Instagram: {post_url}"
-        )
+        ))
     except Exception as e:
         log.exception("Ошибка публикации видео %s", video_id)
-        await context.bot.send_message(
+        await _safe(context.bot.send_message(
             chat_id=CFG.telegram_chat_id, text=f"⚠️ Ошибка публикации в Instagram: {e}"
-        )
+        ))
 
 
 # --------------------------------------------------------------------------- #
@@ -197,14 +208,14 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def request_product_photos(app: Application):
     STATE.data["awaiting_photo_link"] = True
     STATE.save()
-    await app.bot.send_message(
+    await _safe(app.bot.send_message(
         chat_id=CFG.telegram_chat_id,
         text=(
             "📎 Пришлите ссылку на Google Диск с фото товара для сегодняшней "
             "генерации (файл или папка, доступ «Всем, у кого есть ссылка»). "
             "Как только пришлёте — начну собирать тренды и писать сценарии."
         ),
-    )
+    ))
 
 
 async def cmd_run_pipeline(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -232,34 +243,34 @@ async def on_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     STATE.data["awaiting_photo_link"] = False
     STATE.save()
-    await update.message.reply_text("⏳ Скачиваю фото с Google Диска...")
+    await _safe(update.message.reply_text("⏳ Скачиваю фото с Google Диска..."))
 
     try:
         photos = await asyncio.to_thread(download_from_drive, link)
     except Exception as e:
         log.exception("Ошибка скачивания с Google Диска")
-        await update.message.reply_text(f"⚠️ Не удалось скачать с Google Диска: {e}")
+        await _safe(update.message.reply_text(f"⚠️ Не удалось скачать с Google Диска: {e}"))
         return
 
     if not photos:
-        await update.message.reply_text(
+        await _safe(update.message.reply_text(
             "⚠️ По ссылке не нашлось ни одного фото (jpg/png/webp). "
             "Проверьте доступ («Всем, у кого есть ссылка») и пришлите /run ещё раз."
-        )
+        ))
         return
 
-    await update.message.reply_text(f"✅ Скачано {len(photos)} фото. Анализирую и собираю тренды...")
+    await _safe(update.message.reply_text(f"✅ Скачано {len(photos)} фото. Анализирую и собираю тренды..."))
 
     try:
         photo_info = await asyncio.to_thread(analyze_product_photos, photos)
         scenarios = await asyncio.to_thread(run_trend_and_prompt_pipeline, photos, photo_info)
     except Exception as e:
         log.exception("Ошибка пайплайна после получения фото с Google Диска")
-        await update.message.reply_text(f"⚠️ Ошибка при генерации сценариев: {e}")
+        await _safe(update.message.reply_text(f"⚠️ Ошибка при генерации сценариев: {e}"))
         return
 
     if not scenarios:
-        await update.message.reply_text("Не удалось сгенерировать сценарии, проверьте логи.")
+        await _safe(update.message.reply_text("Не удалось сгенерировать сценарии, проверьте логи."))
         return
     for scn in scenarios:
         await send_scenario_for_approval(context.application, scn)
