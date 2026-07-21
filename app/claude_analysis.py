@@ -66,7 +66,7 @@ def select_relevant_trends(trends: list[dict]) -> list[dict]:
     log.info("Отправляю тренды в Claude на анализ и отбор...")
     message = client.messages.create(
         model=CFG.claude_model,
-        max_tokens=1500,
+        max_tokens=4096,
         system=system,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -126,7 +126,7 @@ def generate_video_prompts(selected_trends: list[dict], product_photos: list[Pat
     log.info("Прошу Claude сгенерировать %d сюжетных промптов...", n)
     message = client.messages.create(
         model=CFG.claude_model,
-        max_tokens=3000,
+        max_tokens=4096,
         system=system,
         messages=[{"role": "user", "content": user_prompt}],
     )
