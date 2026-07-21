@@ -1,4 +1,6 @@
-FROM python:3.11-slim
+# Через зеркало public.ecr.aws, а не напрямую docker.io — на VPS с общим IP
+# анонимные pull часто упираются в лимит Docker Hub (429 Too Many Requests).
+FROM public.ecr.aws/docker/library/python:3.11-slim
 
 WORKDIR /app
 
