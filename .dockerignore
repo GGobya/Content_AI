@@ -1,4 +1,5 @@
 .git
+.github
 .env
 venv
 __pycache__
@@ -8,3 +9,8 @@ output/*
 photos/*
 !photos/.gitkeep
 state.json
+docs
+deploy
+README.md
+CLAUDE.md
+docker-compose.yml
