@@ -3,12 +3,16 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
-    # Docker bridge network has no outbound IPv6 route even when the host
-    # does; api.telegram.org resolves to an AAAA record, so without this
-    # the container tries IPv6 first and hangs until ConnectTimeout.
-    sysctls:
-      - net.ipv6.conf.all.disable_ipv6=1
-      - net.ipv6.conf.default.disable_ipv6=1
+    # From this network, api.telegram.org only resolves to an AAAA (IPv6)
+    # record — no A record at all (likely IPv6-only DNS as an anti-block
+    # measure). The host has real outbound IPv6 and reaches it fine; the
+    # default Docker bridge network does not get an IPv6 route/address at
+    # all, so the container can't use that address (Network unreachable).
+    # host networking gives the container the exact same IPv6 path the
+    # host already has, instead of fighting to set up IPv6 NAT in Docker.
+    # Bot only makes outbound connections (no listening port), so this is
+    # safe alongside other services already running on the host.
+    network_mode: host
     volumes:
       - ./photos:/app/photos
       - ./output:/app/output

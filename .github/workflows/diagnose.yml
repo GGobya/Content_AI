@@ -26,28 +26,10 @@ jobs:
             cd /opt/movirevo
             echo "=== docker compose ps ==="
             docker compose ps
-            echo "=== docker compose logs (last 200 lines) ==="
-            docker compose logs --tail 200
+            echo "=== docker compose logs (last 100 lines) ==="
+            docker compose logs --tail 100
             echo "=== connectivity: host -> api.telegram.org ==="
             curl -sS -o /dev/null -w "http_code=%{http_code} time=%{time_total}s\n" --max-time 10 https://api.telegram.org || echo "host curl FAILED: $?"
-            echo "=== connectivity: container -> api.telegram.org ==="
+            echo "=== connectivity: bot container (host network) -> api.telegram.org ==="
             docker compose exec -T bot python3 -c "import urllib.request,time; t=time.time(); urllib.request.urlopen(\"https://api.telegram.org\", timeout=10); print(\"OK\", time.time()-t)" || echo "container curl FAILED"
-            echo "=== DNS resolution on host ==="
-            getent hosts api.telegram.org || echo "DNS FAILED"
-            echo "=== IPv6 disabled in container? ==="
-            docker compose exec -T bot cat /proc/sys/net/ipv6/conf/all/disable_ipv6
-            echo "=== isolated test container: network sanity ==="
-            docker run --rm --network movirevo_default movirevo-bot python3 -c "
-          import socket, time
-          for host in [(\"api.telegram.org\",443), (\"pypi.org\",443), (\"8.8.8.8\",443)]:
-              t=time.time()
-              try:
-                  s = socket.create_connection(host, timeout=5)
-                  s.close()
-                  print(host, \"OK\", round(time.time()-t,2))
-              except Exception as e:
-                  print(host, \"FAIL\", type(e).__name__, str(e), round(time.time()-t,2))
-          "
-            echo "=== isolated test container: ip a / ip route ==="
-            docker run --rm --network movirevo_default movirevo-bot sh -c "cat /proc/net/route 2>/dev/null | head -5; echo ---; cat /etc/resolv.conf"
           '
