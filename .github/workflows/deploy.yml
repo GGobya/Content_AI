@@ -1,0 +1,23 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - claude/telegram-video-scenario-bot-7663kc
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Ветка для деплоя"
+        required: false
+        default: "main"
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Деплой на сервере
+        run: |
+          BRANCH="${{ github.event.inputs.branch || github.ref_name }}"
+          echo "Деплою ветку: $BRANCH"
+          bash /opt/content_ai/deploy/deploy.sh "$BRANCH"

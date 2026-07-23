@@ -64,6 +64,60 @@ python main.py
 
 Дальше в Telegram: `/start`, затем `/new` на каждое новое видео.
 
+## Деплой на сервер (автоматически через GitHub Actions)
+
+Бот выкатывается на прод через **self-hosted GitHub Actions runner**,
+установленный прямо на сервере: пуш в ветку → runner сам подтягивает код и
+перезапускает systemd-сервис. Прямой SSH-доступ отсюда (из сессии Claude
+Code) не требуется и не используется.
+
+### Разовая настройка сервера (выполняется вручную, один раз)
+
+1. **Склонировать репозиторий и подготовить окружение:**
+   ```bash
+   git clone https://github.com/GGobya/Content_AI.git /opt/content_ai
+   cd /opt/content_ai
+   python3 -m venv .venv
+   .venv/bin/pip install -r requirements.txt
+   cp .env.example .env
+   nano .env   # заполнить все ключи — файл остаётся только на сервере
+   mkdir -p credentials && cp /путь/к/google-service-account.json credentials/
+   ```
+
+2. **Установить systemd-сервис бота:**
+   ```bash
+   sudo cp deploy/content-ai-bot.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   sudo systemctl enable --now content-ai-bot
+   sudo systemctl status content-ai-bot
+   ```
+
+3. **Разрешить деплою рестартовать сервис без пароля** (runner будет вызывать
+   `sudo systemctl restart content-ai-bot`):
+   ```bash
+   echo "root ALL=(ALL) NOPASSWD: /bin/systemctl restart content-ai-bot, /bin/systemctl status content-ai-bot" \
+     | sudo tee /etc/sudoers.d/content-ai-bot
+   ```
+
+4. **Установить self-hosted runner:** в GitHub — Settings репозитория →
+   Actions → Runners → «New self-hosted runner» → Linux/x64. GitHub покажет
+   готовые команды с актуальной версией и одноразовым токеном — выполнить их
+   на сервере как есть (токен там встроен, поэтому команды с github.com не
+   копирую сюда — они устаревают за час). После `./config.sh` поставить
+   раннер как сервис, чтобы он переживал перезагрузки:
+   ```bash
+   sudo ./svc.sh install
+   sudo ./svc.sh start
+   ```
+
+После этого шага **любой пуш** в `main` (или в ветку разработки, пока PR не
+смёржен — см. список веток в `.github/workflows/deploy.yml`) автоматически
+подтягивает код на сервер и перезапускает бота. Проверить: Actions → Deploy
+в интерфейсе GitHub — там видно, что реально выполнилось на runner'е.
+
+Когда PR смёржен и `claude/telegram-video-scenario-bot-7663kc` больше не
+нужна как триггер — убери её из `branches:` в workflow.
+
 ## Важно: Higgsfield job_type ещё нужно сверить вживую
 
 Бот использует официальный `higgsfield-client` (Python SDK) и по умолчанию
@@ -101,6 +155,10 @@ app/
 └── telegram_bot.py        хендлеры, approve-flow, фоновый опрос задач
 main.py                    точка входа
 tests/                     unit-тесты (state, scenario_writer, higgsfield_client)
+deploy/
+├── deploy.sh              скрипт деплоя (git pull + venv + restart), запускается runner'ом
+└── content-ai-bot.service systemd-unit бота для сервера
+.github/workflows/deploy.yml   self-hosted runner: пуш → деплой на сервере
 ```
 
 ## Тесты

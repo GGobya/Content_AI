@@ -1,0 +1,16 @@
+[Unit]
+Description=Content AI Telegram bot (MOVIREVO)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/content_ai
+ExecStart=/opt/content_ai/.venv/bin/python /opt/content_ai/main.py
+Restart=on-failure
+RestartSec=5
+# .env лежит в WorkingDirectory и читается python-dotenv автоматически —
+# отдельный EnvironmentFile тут не нужен.
+
+[Install]
+WantedBy=multi-user.target
