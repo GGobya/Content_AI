@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+venv/
+credentials/
+data/state.json
+data/photos/*
+data/videos/*
+!data/photos/.gitkeep
+!data/videos/.gitkeep
+*.log
